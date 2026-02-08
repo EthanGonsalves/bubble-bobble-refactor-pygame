@@ -367,7 +367,7 @@ class Player(GravityActor):
                     self.image = "fall" + str((game.timer // 4) % 2)
             elif self.fire_timer > 0:
                 self.image = "blow" + dir_index
-            elif self.direction_x == 0 and not self._was_moving:
+            elif not self._was_moving:
                 self.image = "still"
             else:
                 self.image = "run" + dir_index + str((game.timer // 8) % 4)
