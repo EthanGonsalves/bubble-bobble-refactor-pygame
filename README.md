@@ -11,6 +11,12 @@ From the repository root run:
 
 python cavern.py
 
+## Game Controls
+- Left/Right arrows: Move left and right
+- Up arrow: Jump
+- Space bar: Fire bubbles
+- P: Pause/Unpause the game
+
 ## Tests
 There are no automated tests included in this repository. To run tests if added, use:
 
