@@ -36,7 +36,7 @@ class App:
                 from src.screens.play import PlayScreen
                 self.current_screen = PlayScreen(self, **kwargs)
             elif screen_type == ScreenType.GAME_OVER:
-                from src.screens.game_over import GameOverScreen
+                from src.screens.gameover import GameOverScreen
                 self.current_screen = GameOverScreen(self, **kwargs)
 
     def update(self, keyboard):
