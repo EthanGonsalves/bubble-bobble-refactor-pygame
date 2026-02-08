@@ -715,9 +715,12 @@ def draw():
             current_screen.game.draw()
             draw_status(current_screen.game)
             
-            # Draw pause overlay if paused
+            # Draw pause overlay if paused (keep the underlying scene visible)
             if current_screen.is_paused():
-                screen.fill("black")
+                # Create a semi-transparent black surface and blit it over the screen
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 160))
+                screen.surface.blit(overlay, (0, 0))
                 draw_text("PAUSED", 200)
         
         # Menu screen

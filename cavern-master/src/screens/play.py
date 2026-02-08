@@ -33,7 +33,8 @@ class PlayScreen:
             #Check for game over
             if self.game.player and self.game.player.lives < 0:
                 self.game.play_sound("over")
-                self.app.change_screen(ScreenType.GAME_OVER)
+                # Pass the current game instance so the GameOver screen can draw the final scene
+                self.app.change_screen(ScreenType.GAME_OVER, game=self.game)
 
     def draw(self):
         #Draw the gameplay screen
