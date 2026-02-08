@@ -2,6 +2,9 @@ from random import choice, randint, random, shuffle
 from enum import Enum
 import pygame, pgzero, pgzrun, sys
 
+# Import refactored architecture
+from src.app import App, ScreenType
+
 # Check Python version number. sys.version_info gives version as a tuple, e.g. if (3,7,2,'final',0) for version 3.7.2.
 # Unlike many languages, Python can compare two tuples in the same way that you can compare numbers.
 if sys.version_info < (3,5):
@@ -295,6 +298,7 @@ class Player(GravityActor):
 
         self.lives = 2
         self.score = 0
+        self._was_moving = False
 
     def reset(self):
         self.pos = (WIDTH / 2, 100)
@@ -348,51 +352,9 @@ class Player(GravityActor):
                 if self.top >= HEIGHT*1.5:
                     self.lives -= 1
                     self.reset()
-        else:
-            # We're not hurt
-            # Get keyboard input. dx represents the direction the player is facing
-            dx = 0
-            if keyboard.left:
-                dx = -1
-            elif keyboard.right:
-                dx = 1
-
-            if dx != 0:
-                self.direction_x = dx
-
-                # If we haven't just fired an orb, carry out horizontal movement
-                if self.fire_timer < 10:
-                    self.move(dx, 0, 4)
-
-            # Do we need to create a new orb? Space must have been pressed and released, the minimum time between
-            # orbs must have passed, and there is a limit of 5 orbs.
-            if space_pressed() and self.fire_timer <= 0 and len(game.orbs) < 5:
-                # x position will be 38 pixels in front of the player position, while ensuring it is within the
-                # bounds of the level
-                x = min(730, max(70, self.x + self.direction_x * 38))
-                y = self.y - 35
-                self.blowing_orb = Orb((x,y), self.direction_x)
-                game.orbs.append(self.blowing_orb)
-                game.play_sound("blow", 4)
-                self.fire_timer = 20
-
-            if keyboard.up and self.vel_y == 0 and self.landed:
-                # Jump
-                self.vel_y = -16
-                self.landed = False
-                game.play_sound("jump")
-
-        # Holding down space causes the current orb (if there is one) to be blown further
-        if keyboard.space:
-            if self.blowing_orb:
-                # Increase blown distance up to a maximum of 120
-                self.blowing_orb.blown_frames += 4
-                if self.blowing_orb.blown_frames >= 120:
-                    # Can't be blown any further
-                    self.blowing_orb = None
-        else:
-            # If we let go of space, we relinquish control over the current orb - it can't be blown any further
-            self.blowing_orb = None
+        
+        # NOTE: Keyboard input is now handled by PlayScreen._update_player_input()
+        # This keeps Player logic separate from input handling
 
         # Set sprite image. If we're currently hurt, the sprite will flash on and off on alternate frames.
         self.image = "blank"
@@ -405,10 +367,49 @@ class Player(GravityActor):
                     self.image = "fall" + str((game.timer // 4) % 2)
             elif self.fire_timer > 0:
                 self.image = "blow" + dir_index
-            elif dx == 0:
+            elif self.direction_x == 0 and not self._was_moving:
                 self.image = "still"
             else:
                 self.image = "run" + dir_index + str((game.timer // 8) % 4)
+    
+    def apply_input(self, dx, jump_pressed, fire_pressed, fire_held):
+        """
+        Apply input to the player. Called by PlayScreen._update_player_input().
+        This keeps the Player class from directly accessing keyboard.
+        """
+        # Horizontal movement
+        if dx != 0:
+            self.direction_x = dx
+            # If we haven't just fired an orb, carry out horizontal movement
+            if self.fire_timer < 10:
+                self.move(dx, 0, 4)
+            self._was_moving = True
+        else:
+            self._was_moving = False
+        
+        # Jumping
+        if jump_pressed and self.vel_y == 0 and self.landed:
+            self.vel_y = -16
+            self.landed = False
+            game.play_sound("jump")
+        
+        # Firing orbs
+        if fire_pressed and self.fire_timer <= 0 and len(game.orbs) < 5:
+            x = min(730, max(70, self.x + self.direction_x * 38))
+            y = self.y - 35
+            self.blowing_orb = Orb((x, y), self.direction_x)
+            game.orbs.append(self.blowing_orb)
+            game.play_sound("blow", 4)
+            self.fire_timer = 20
+        
+        # Holding down fire to blow orb further
+        if fire_held:
+            if self.blowing_orb:
+                self.blowing_orb.blown_frames += 4
+                if self.blowing_orb.blown_frames >= 120:
+                    self.blowing_orb = None
+        else:
+            self.blowing_orb = None
 
 class Robot(GravityActor):
     TYPE_NORMAL = 0
@@ -665,7 +666,7 @@ def draw_text(text, y, x=None):
 
 IMAGE_WIDTH = {"life":44, "plus":40, "health":40}
 
-def draw_status():
+def draw_status(game):
     # Display score, right-justified at edge of screen
     number_width = CHAR_WIDTH[0]
     s = str(game.player.score)
@@ -688,78 +689,58 @@ def draw_status():
         x += IMAGE_WIDTH[image]
 
 # Is the space bar currently being pressed down?
-space_down = False
-
-# Has the space bar just been pressed? i.e. gone from not being pressed, to being pressed
-def space_pressed():
-    global space_down
-    if keyboard.space:
-        if space_down:
-            # Space was down previous frame, and is still down
-            return False
-        else:
-            # Space wasn't down previous frame, but now is
-            space_down = True
-            return True
-    else:
-        space_down = False
-        return False
+# NOTE: This is now handled by InputManager in src/input.py
+# Keeping comment here for reference only.
 
 # Pygame Zero calls the update and draw functions each frame
 
-class State(Enum):
-    MENU = 1
-    PLAY = 2
-    GAME_OVER = 3
-
-
 def update():
-    global state, game
+    """Global update function - delegates to App"""
+    global app
+    app.update(keyboard)
 
-    if state == State.MENU:
-        if space_pressed():
-            # Switch to play state, and create a new Game object, passing it a new Player object to use
-            state = State.PLAY
-            game = Game(Player())
-        else:
-            game.update()
-
-    elif state == State.PLAY:
-        if game.player.lives < 0:
-            game.play_sound("over")
-            state = State.GAME_OVER
-        else:
-            game.update()
-
-    elif state == State.GAME_OVER:
-        if space_pressed():
-            # Switch to menu state, and create a new game object without a player
-            state = State.MENU
-            game = Game()
 
 def draw():
-    game.draw()
-
-    if state == State.MENU:
-        # Draw title screen
-        screen.blit("title", (0, 0))
-
-        # Draw "Press SPACE" animation, which has 10 frames numbered 0 to 9
-        # The first part gives us a number between 0 and 159, based on the game timer
-        # Dividing by 4 means we go to a new animation frame every 4 frames
-        # We enclose this calculation in the min function, with the other argument being 9, which results in the
-        # animation staying on frame 9 for three quarters of the time. Adding 40 to the game timer is done to alter
-        # which stage the animation is at when the game first starts
-        anim_frame = min(((game.timer + 40) % 160) // 4, 9)
-        screen.blit("space" + str(anim_frame), (130, 280))
-
-    elif state == State.PLAY:
-        draw_status()
-
-    elif state == State.GAME_OVER:
-        draw_status()
-        # Display "Game Over" image
-        screen.blit("over", (0, 0))
+    """Global draw function - delegates to App"""
+    global game
+    
+    # If we're in play mode, draw the game
+    current_screen = app.current_screen
+    
+    if current_screen:
+        screen_class_name = current_screen.__class__.__name__
+        
+        if screen_class_name == "PlayScreen":
+            game = current_screen.game  # Keep global game in sync
+            current_screen.game.draw()
+            draw_status(current_screen.game)
+            
+            # Draw pause overlay if paused
+            if current_screen.is_paused():
+                screen.fill("black")
+                draw_text("PAUSED", 200)
+        
+        # Menu screen
+        elif screen_class_name == "MenuScreen":
+            if current_screen.game:
+                game = current_screen.game  # Keep global game in sync
+                game.draw()
+            
+            # Draw title screen
+            screen.blit("title", (0, 0))
+            
+            # Draw "Press SPACE" animation
+            anim_frame = min(((game.timer + 40) % 160) // 4, 9)
+            screen.blit("space" + str(anim_frame), (130, 280))
+        
+        # Game over screen
+        elif screen_class_name == "GameOverScreen":
+            if current_screen.game:
+                game = current_screen.game  # Keep global game in sync
+                game.draw()
+                draw_status(game)
+            # Display "Game Over" image
+            screen.blit("over", (0, 0))
 
 # Set up sound system and start music
 try:
@@ -773,11 +754,13 @@ except:
     pass
 
 
-
-# Set the initial game state
-state = State.MENU
-
-# Create a new Game object, without a Player object
+# Initialize the App and start with the menu screen
+app = App(game_class=Game, player_class=Player)
+# Create a dummy game for the menu (will be replaced when play screen starts)
 game = Game()
+
+# Start with the menu screen
+from src.screens.menu import MenuScreen
+app.current_screen = MenuScreen(app, game)
 
 pgzrun.go()
